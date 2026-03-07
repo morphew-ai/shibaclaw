@@ -1,0 +1,16 @@
+skill: third-party-llm
+version: 1.0.0
+description: "Configure NanoClaw to use third-party LLM providers (Qwen, OpenRouter, etc.) via Anthropic-compatible API"
+core_version: 0.1.0
+adds: []
+modifies:
+  - src/container-runner.ts
+structured:
+  npm_dependencies: {}
+  env_additions:
+    - ANTHROPIC_AUTH_TOKEN
+    - ANTHROPIC_BASE_URL
+    - ANTHROPIC_MODEL
+conflicts: []
+depends: []
+test: "npm run build"
