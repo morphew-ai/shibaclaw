@@ -1,0 +1,15 @@
+name: add-whatsapp-swarm
+description: Add Agent Swarm support to WhatsApp. Multiple agents with different LLM models can collaborate via [AgentName] prefixes. Requires WhatsApp channel to be set up first (use /add-whatsapp). Triggers on "agent swarm whatsapp", "whatsapp swarm", "multi-agent whatsapp".
+triggers:
+  - agent swarm whatsapp
+  - whatsapp swarm
+  - multi-agent whatsapp
+  - agent teams whatsapp
+files:
+  - src/swarm-config.ts
+  - src/swarm-manager.ts
+  - src/types.ts
+  - src/container-runner.ts
+  - src/ipc.ts
+  - src/channels/whatsapp.ts
+  - src/index.ts
