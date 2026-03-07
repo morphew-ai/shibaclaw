@@ -5,7 +5,7 @@ description: Add Agent Swarm support to WhatsApp. Multiple agents with different
 
 # Add Agent Swarm to WhatsApp
 
-This skill adds Agent Swarm (Teams) support to an existing WhatsApp channel. Multiple agents with different LLM models can collaborate in a WhatsApp group, with each agent's messages prefixed with `[AgentName]` for identification.
+This skill adds Agent Swarm support to an existing WhatsApp channel. Multiple agents with different LLM models can collaborate in a WhatsApp group, with each agent's messages prefixed with `[AgentName]` for identification.
 
 **Prerequisite**: WhatsApp must already be set up via the `/add-whatsapp` skill. If `src/channels/whatsapp.ts` does not exist, tell the user to run `/add-whatsapp` first.
 
@@ -21,13 +21,13 @@ User: @assistant Analyze this code
 [Leader] Based on the team's findings, here's my synthesis...
 ```
 
+The swarm functionality is built into NanoClaw's core (`src/swarm-config.ts` and `src/swarm-manager.ts`). Once you create a `swarm.yaml` file, it activates automatically.
+
 ## Prerequisites
 
 ### Third-Party LLM Provider (Optional)
 
-If you want agents to use different LLM models (e.g., Qwen, GLM), configure the third-party LLM provider first. Run `/add-third-party-llm` for setup instructions.
-
-The provider must support Anthropic-compatible API endpoints.
+If you want agents to use different LLM models (e.g., Qwen, GLM, DeepSeek), configure the third-party LLM provider first. The provider must support Anthropic-compatible API endpoints.
 
 ## Implementation
 
@@ -85,6 +85,18 @@ ANTHROPIC_AUTH_TOKEN=sk-xxx
 ANTHROPIC_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/apps/anthropic
 ```
 
+For per-agent overrides, you can specify `baseUrl` and `authToken` directly in the agent configuration:
+
+```yaml
+agents:
+  - name: Researcher
+    model: glm-5
+    baseUrl: https://api.example.com/v1
+    authToken: sk-custom-token  # Optional: override per agent
+    role: worker
+    profile: ...
+```
+
 ### Step 3: Rebuild and Restart
 
 ```bash
@@ -115,8 +127,8 @@ Check logs: `tail -f logs/nanoclaw.log | grep -i swarm`
 All workers execute simultaneously, then the orchestrator synthesizes:
 
 ```
-1. Workers start in parallel
-2. Each sends [AgentName] responses
+1. Workers start in parallel (each gets unique session to avoid state leakage)
+2. Each sends [AgentName] responses as they complete
 3. Orchestrator receives all results
 4. Orchestrator sends final synthesis
 ```
@@ -146,42 +158,73 @@ Use for: Tasks that build on previous results.
 | `profile` | Yes | Agent's system prompt / role description |
 | `role` | No | `orchestrator` (leader) or `worker` |
 
+**Important**: Exactly one agent must have `role: orchestrator`. The configuration will be rejected if there are zero or multiple orchestrators.
+
 ### Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `timeout` | 300000 | Per-agent timeout (5 min) |
+| `timeout` | 300000 | Per-agent timeout in milliseconds (5 min) |
 | `maxRetries` | 3 | Retry attempts on failure |
-| `parallelTimeout` | 60000 | Total wait for all parallel agents |
+| `parallelTimeout` | 60000 | Total wait for all parallel agents (1 min) |
 
 ## Troubleshooting
 
 ### Swarm not activating
 
-1. Verify `swarm.yaml` exists in the correct group folder
+1. Verify `swarm.yaml` exists in the correct group folder (`groups/{folder}/swarm.yaml`)
 2. Check `enabled: true` is set
 3. Ensure exactly one agent has `role: orchestrator`
-4. Check logs for configuration errors
+4. Check logs for configuration errors: `tail -f logs/nanoclaw.log`
 
 ### Third-party models not working
 
 1. Verify `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_BASE_URL` are set in `.env`
-2. Test the API endpoint directly with curl
-3. Check the model ID matches the provider's supported models
+2. Or configure `baseUrl` and `authToken` per agent in `swarm.yaml`
+3. Test the API endpoint directly with curl
+4. Check the model ID matches the provider's supported models
 
 ### Agents timing out
 
-1. Increase `timeout` in settings
+1. Increase `timeout` in settings (value is in milliseconds)
 2. Check if the model is responding slowly
 3. Reduce task complexity or split into smaller tasks
+4. Check container logs in `groups/{folder}/logs/`
+
+### Duplicate agent prefixes
+
+The WhatsApp channel automatically handles prefix formatting. If you see duplicated prefixes like `[[Leader]] message`, check that the agent isn't already adding its own prefix in the output.
 
 ## Architecture Notes
 
-- Swarm config is loaded per-group from `groups/{folder}/swarm.yaml`
-- Each agent runs in its own container with isolated secrets
-- Model overrides are passed via stdin (never written to disk)
-- Agent prefixes are preserved through the WhatsApp channel
-- The orchestrator is identified by `role: orchestrator` (not by name)
+### Core Components
+
+| File | Purpose |
+|------|---------|
+| `src/swarm-config.ts` | Loads and validates swarm.yaml |
+| `src/swarm-manager.ts` | Orchestrates parallel/sequential execution |
+| `src/container-runner.ts` | Model override via stdin (never written to disk) |
+| `src/channels/whatsapp.ts` | Agent prefix detection and formatting |
+
+### Execution Flow
+
+1. `loadSwarmConfig()` validates the YAML file
+2. `SwarmManager.executeSwarm()` is called with the group's configuration
+3. For parallel mode: workers spawn simultaneously with unique sessions
+4. For sequential mode: orchestrator → workers → orchestrator
+5. Each agent's output is prefixed with `[AgentName]`
+6. WhatsApp channel detects existing prefixes to avoid duplication
+
+### Session Isolation
+
+In parallel mode, each worker gets a unique session ID (`{sessionId}-{agentname}`) to prevent state leakage between agents. The orchestrator uses the original session to maintain conversation continuity.
+
+### Model Override Mechanism
+
+Model overrides are passed via stdin to the container:
+- Secrets (API keys) are never written to disk
+- `modelOverride` object contains `model`, `baseUrl`, and `authToken`
+- Container runner merges these with base environment
 
 ## Removal
 

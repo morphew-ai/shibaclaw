@@ -6,10 +6,13 @@ triggers:
   - multi-agent whatsapp
   - agent teams whatsapp
 files:
+  # Core swarm functionality (built into NanoClaw)
   - src/swarm-config.ts
   - src/swarm-manager.ts
   - src/types.ts
+  # Integration points
   - src/container-runner.ts
-  - src/ipc.ts
-  - src/channels/whatsapp.ts
   - src/index.ts
+  - src/channels/whatsapp.ts
+  - src/swarm.test.ts
+  - src/channels/whatsapp.test.ts
